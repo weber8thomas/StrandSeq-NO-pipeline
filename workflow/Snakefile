@@ -1,0 +1,92 @@
+import os, sys, collections
+
+os.environ["NGSPLOT"] = "/g/korbel2/weber/Gits/ngsplot"
+
+envvars:
+    "NGSPLOT"
+
+
+dir = "/scratch/tweber/DATA/MC_DATA/EVA_scNOVA_comparison_090523"
+comparisons = [
+    ("GM19705x01", "GM19705iTRU3C"),
+    ("HGSVCxpool1x01", "HGSVCPool1x02", "HGSVCpool1quadrant2KAPA", "HGSVCxPool1"),
+    ("HGSVCxpool2x02", "HGSVCpool2iTRUE5", "HGSVCpool2OPSfromFrozen2ul"),
+]
+
+comparisons_dict = {".vs.".join(list(e)):e for e in comparisons}
+
+# comparisons = collections.defaultdict(list)
+
+def check_d(d):
+    if d not in ["config", "log", ".DS_Store", "._.DS_Store", "NO_occupancy_analysis"] and ".vs." not in d:
+        return d
+
+# Traverse the directory structure
+top_dirs = [check_d(d) for d in os.listdir(dir) if check_d(d)]
+print(top_dirs)
+# assert len(set([sub_e for e in comparisons for sub_e in e]).intersection(set(top_dirs))) == len(set(top_dirs))
+
+
+regions = ["tss", "tes", "genebody"]
+
+
+# Traverse the directory structure
+# top_dirs = [check_d(d) for d in os.listdir(dir) if check_d(d)]
+# for d in top_dirs:
+#     comparisons[d] = [check_d(e) for e in os.listdir(f"{dir}/{d}") if check_d(e)]
+# for d in list(comparisons.keys()):
+#     if len(comparisons[d]) != 2:
+#         print(d, comparisons[d])
+#         sys.exit("ERROR, more than 2 samples to be compared")
+#     else:
+#         comparisons[d] = ".vs.".join(comparisons[d])
+
+# print(comparisons)
+
+
+def get_mem_mb_heavy(wildcards, attempt):
+    mem_avail = [8, 16, 64, 128, 256]
+    return mem_avail[attempt - 1] * 1000
+
+
+
+rule all:
+    input:
+        expand("{folder}/NO_occupancy_analysis/{comparison}/ngsplot_comparison_{region}/{comparison}.heatmap.pdf", folder=dir, comparison=list(comparisons_dict.keys()), region=regions)
+
+rule merge_selected_cells:
+    input:
+        "{folder}/{run}/{sample}/selected"
+    output:
+        "{folder}/{run}/{sample}/selected_bam_merge/{sample}.merge.bam"
+    envmodules:
+        "SAMtools/1.14-GCC-11.2.0"
+    resources:
+        mem_mb=get_mem_mb_heavy,
+        time="10:00:00",
+    threads:    
+        16
+    shell:
+        "samtools merge -@ {threads} {output} {input}/*.bam"
+
+# def aggr_merge_bam(wc):
+#     return expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam".format(folder=dir, sample=list(comparisons_dict[wc.comparison])))
+
+rule ngsplot:
+    input:
+        # aggr_merge_bam,
+        lambda wc: expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam", folder=dir, sample=list(comparisons_dict[wc.comparison]))
+    output:
+        heatmap="{folder}/NO_occupancy_analysis/{comparison}/ngsplot_comparison_{region}/{comparison}.heatmap.pdf",
+        # ngsplot_dir=directory("{folder}/{run}/{comparison}/ngsplot_comparison_{region}/{comparison}/")
+    params:
+        sample1 =  lambda wc: wc.comparison.split(".vs.")[0],
+        sample2 =  lambda wc: wc.comparison.split(".vs.")[1],
+        ngsplot_dir = lambda wc, output: output.heatmap.replace(".heatmap.pdf", "")
+    conda:
+        "ngsplot"
+    resources:
+        mem_mb=get_mem_mb_heavy,
+        time="10:00:00",
+    shell:
+        "Rscript /g/korbel2/weber/Gits/ngsplot/bin/ngs.plot.r -G hg38 -R {wildcards.region} -C {input[0]}:{input[1]} -O {params.ngsplot_dir} -T {params.sample1}.vs.{params.sample2}  -L 2000 -P 4 -MQ 10"
