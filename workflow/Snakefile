@@ -1,17 +1,21 @@
-import os, sys, collections
+import os, sys, collections, itertools
+import pandas as pd
 
-os.environ["NGSPLOT"] = "/g/korbel2/weber/Gits/ngsplot"
+# os.environ["NGSPLOT"] = "/g/korbel2/weber/Gits/ngsplot"
 
-envvars:
-    "NGSPLOT"
+# envvars:
+#     "NGSPLOT"
 
 
 dir = "/scratch/tweber/DATA/MC_DATA/EVA_scNOVA_comparison_090523"
 comparisons = [
-    ("GM19705x01", "GM19705iTRU3C"),
+    ("GM19705x01", "GM19705iTRU3C", "GM19705"),
     ("HGSVCxpool1x01", "HGSVCPool1x02", "HGSVCpool1quadrant2KAPA", "HGSVCxPool1"),
     ("HGSVCxpool2x02", "HGSVCpool2iTRUE5", "HGSVCpool2OPSfromFrozen2ul"),
 ]
+# comparisons = [list(itertools.combinations(e,2)) for e in comparisons_raw]
+# comparisons = [sub_e for e in comparisons for sub_e in e]
+print(comparisons)
 
 comparisons_dict = {".vs.".join(list(e)):e for e in comparisons}
 
@@ -28,6 +32,8 @@ print(top_dirs)
 
 
 regions = ["tss", "tes", "genebody"]
+# regions = ["genome"]
+
 
 
 # Traverse the directory structure
@@ -48,40 +54,191 @@ def get_mem_mb_heavy(wildcards, attempt):
     mem_avail = [8, 16, 64, 128, 256]
     return mem_avail[attempt - 1] * 1000
 
+def get_mem_mb(wildcards, attempt):
+    mem_avail = [2, 4, 8, 16, 64]
+    return mem_avail[attempt - 1] * 1000
+
 
 
 rule all:
     input:
         expand("{folder}/NO_occupancy_analysis/{comparison}/ngsplot_comparison_{region}/{comparison}.heatmap.pdf", folder=dir, comparison=list(comparisons_dict.keys()), region=regions)
 
+
+# def extract_correct_cells(wc):
+
+
+
+rule remove_low_quality_reads:
+    input:
+        bam="{folder}/{sample}/bam/{cell}.sort.mdup.bam",
+    output:
+        bam_pre="{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono.bam",
+        bam_header="{folder}/{sample}/scNOVA_bam_modified/{cell}.header_test.sam",
+    log:
+        "{folder}/{sample}/log/remove_low_quality_reads/{cell}.log",
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        samtools view -H {input} > {output.bam_header} 
+        samtools view -F 2304 {input.bam} | awk -f workflow/scripts/awk_1st.awk | cat {output.bam_header} - | samtools view -Sb - > {output.bam_pre}    
+        """
+
+
+rule sort_bam:
+    log:
+        "{folder}/{sample}/log/sort_bam/{cell}.log",
+    input:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono.bam",
+    output:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark.bam",
+    threads: 2
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        samtools sort -@ {threads} -O BAM -o {output} {input}
+        """
+
+
+rule index_num1:
+    log:
+        "{folder}/{sample}/log/index_num1/{cell}.log",
+    input:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark.bam",
+    output:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark.bam.bai",
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        samtools index {input}
+        """
+
+
+rule remove_dup:
+    log:
+        "{folder}/{sample}/log/remove_dup/{cell}.log",
+    input:
+        bam="{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark.bam",
+        bai="{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark.bam.bai"
+    output:
+        bam_uniq="{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark_uniq.bam",
+        bam_metrix="{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono.metrix_dup.txt",
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        bammarkduplicates markthreads=2 I={input.bam} O={output.bam_uniq} M={output.bam_metrix} index=1 rmdup=1
+        """
+
+
+rule index_num2:
+    log:
+        "{folder}/{sample}/log/index_num2/{cell}.log",
+    input:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark_uniq.bam",
+    output:
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark_uniq.bam.bai",
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        samtools index {input}
+        """
+
+
+def extract_correct_cells_bam(wildcards):
+    df = pd.read_csv(
+        "{folder}/{sample}/cell_selection/labels.tsv".format(folder=wildcards.folder, sample=wildcards.sample),
+        sep="\t",
+    )
+    df = df.loc[df["prediction"] == 1]
+    df["cell"] = df["cell"].str.replace(".sort.mdup.bam", "")
+    cell_list = df.cell.values.tolist()
+    return expand(
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark_uniq.bam", folder=wildcards.folder, sample=wildcards.sample, cell=cell_list
+    )
+def extract_correct_cells_bai(wildcards):
+    df = pd.read_csv(
+        "{folder}/{sample}/cell_selection/labels.tsv".format(folder=wildcards.folder, sample=wildcards.sample),
+        sep="\t",
+    )
+    df = df.loc[df["prediction"] == 1]
+    df["cell"] = df["cell"].str.replace(".sort.mdup.bam", "")
+    cell_list = df.cell.values.tolist()
+    return expand(
+        "{folder}/{sample}/scNOVA_bam_modified/{cell}.sc_pre_mono_sort_for_mark_uniq.bam.bai", folder=wildcards.folder, sample=wildcards.sample, cell=cell_list
+    )
+
 rule merge_selected_cells:
     input:
-        "{folder}/{run}/{sample}/selected"
+        bam=extract_correct_cells_bam,
+        bai=extract_correct_cells_bai,
+        # "{folder}/{run}/{sample}/selected"
     output:
-        "{folder}/{run}/{sample}/selected_bam_merge/{sample}.merge.bam"
-    envmodules:
-        "SAMtools/1.14-GCC-11.2.0"
+        "{folder}/{sample}/selected_bam_merge/{sample}.merge.bam"
+    conda:
+        "../envs/bioinfotools.yaml"
     resources:
         mem_mb=get_mem_mb_heavy,
         time="10:00:00",
     threads:    
         16
     shell:
-        "samtools merge -@ {threads} {output} {input}/*.bam"
+        "samtools merge -@ {threads} {output} {input.bam}"
 
-# def aggr_merge_bam(wc):
-#     return expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam".format(folder=dir, sample=list(comparisons_dict[wc.comparison])))
+
+rule index_merge:
+    input:
+        "{folder}/{sample}/selected_bam_merge/{sample}.merge.bam"
+    output:
+        "{folder}/{sample}/selected_bam_merge/{sample}.merge.bam.bai"
+    conda:
+        "../envs/bioinfotools.yaml"
+    resources:
+        mem_mb=get_mem_mb,
+    shell:
+        """
+        samtools index {input}
+        """
+
+rule ngsplot_config:
+    input:
+        input_bam = lambda wc: expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam", folder=dir, sample=list(comparisons_dict[wc.comparison])),
+        input_bai = lambda wc: expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam.bai", folder=dir, sample=list(comparisons_dict[wc.comparison])),
+    output:
+        config="{folder}/NO_occupancy_analysis/{comparison}/config.txt",
+    run:
+        with open(output[0], "w") as o:
+            for i in list(input.input_bam):
+                o.write("\t".join([i, "-1", os.path.basename(i).replace(".merge.bam", "")]) + "\n")
+
 
 rule ngsplot:
     input:
         # aggr_merge_bam,
-        lambda wc: expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam", folder=dir, sample=list(comparisons_dict[wc.comparison]))
+        # lambda wc: expand("{folder}/{sample}/selected_bam_merge/{sample}.merge.bam", folder=dir, sample=list(comparisons_dict[wc.comparison]))
+        config="{folder}/NO_occupancy_analysis/{comparison}/config.txt",
     output:
         heatmap="{folder}/NO_occupancy_analysis/{comparison}/ngsplot_comparison_{region}/{comparison}.heatmap.pdf",
         # ngsplot_dir=directory("{folder}/{run}/{comparison}/ngsplot_comparison_{region}/{comparison}/")
     params:
-        sample1 =  lambda wc: wc.comparison.split(".vs.")[0],
-        sample2 =  lambda wc: wc.comparison.split(".vs.")[1],
+        samples_reformat_input =  lambda wc, input: ":".join(list(input)),
+        samples_reformat_title =  lambda wc: ".vs.".join(list(comparisons_dict[wc.comparison])),
+        # samples_reformat =  lambda wc: wc.comparison.split(".vs.")[0],
+        # sample2 =  lambda wc: wc.comparison.split(".vs.")[1],
         ngsplot_dir = lambda wc, output: output.heatmap.replace(".heatmap.pdf", "")
     conda:
         "ngsplot"
@@ -89,4 +246,5 @@ rule ngsplot:
         mem_mb=get_mem_mb_heavy,
         time="10:00:00",
     shell:
-        "Rscript /g/korbel2/weber/Gits/ngsplot/bin/ngs.plot.r -G hg38 -R {wildcards.region} -C {input[0]}:{input[1]} -O {params.ngsplot_dir} -T {params.sample1}.vs.{params.sample2}  -L 2000 -P 4 -MQ 10"
+        "Rscript workflow/scripts/ngsplot/ngs.plot.r -G hg38 -R {wildcards.region} -C {params.samples_reformat_input} -O {params.ngsplot_dir} -T {wildcards.comparison}  -L 2000 -MQ 10"
+        # "Rscript /g/korbel2/weber/Gits/ngsplot/bin/ngs.plot.r -G hg38 -C {input.config} -O {params.ngsplot_dir} -T {wildcards.comparison}  -L 2000 -P 4 -MQ 10"

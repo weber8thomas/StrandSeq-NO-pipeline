@@ -1,0 +1,7 @@
+name: bioinfotools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - samtools
+  - biobambam
