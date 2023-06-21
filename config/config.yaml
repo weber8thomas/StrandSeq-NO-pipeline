@@ -1,0 +1,4 @@
+dir: /scratch/tweber/DATA/MC_DATA/EVA_scNOVA_comparison_090523
+comparisons:
+  - GM19705x01,GM19705iTRU3C,GM19705
+  - HGSVCxpool1x01,HGSVCPool1x02,HGSVCpool1quadrant2KAPA,HGSVCxPool1

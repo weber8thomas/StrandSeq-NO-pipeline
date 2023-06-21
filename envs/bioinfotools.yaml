@@ -1,7 +1,8 @@
-name: bioinfotools
+name: no_env
 channels:
   - conda-forge
   - bioconda
 dependencies:
   - samtools
   - biobambam
+  - r-ngsplot

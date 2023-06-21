@@ -1,5 +1,6 @@
 import os, sys, collections, itertools
 import pandas as pd
+configfile: "config/config.yaml"
 
 # os.environ["NGSPLOT"] = "/g/korbel2/weber/Gits/ngsplot"
 
@@ -7,12 +8,14 @@ import pandas as pd
 #     "NGSPLOT"
 
 
-dir = "/scratch/tweber/DATA/MC_DATA/EVA_scNOVA_comparison_090523"
-comparisons = [
-    ("GM19705x01", "GM19705iTRU3C", "GM19705"),
-    ("HGSVCxpool1x01", "HGSVCPool1x02", "HGSVCpool1quadrant2KAPA", "HGSVCxPool1"),
-    ("HGSVCxpool2x02", "HGSVCpool2iTRUE5", "HGSVCpool2OPSfromFrozen2ul"),
-]
+# dir = "/scratch/tweber/DATA/MC_DATA/EVA_scNOVA_comparison_090523"
+dir = config["dir"]
+# comparisons = [
+#     ("GM19705x01", "GM19705iTRU3C", "GM19705"),
+#     ("HGSVCxpool1x01", "HGSVCPool1x02", "HGSVCpool1quadrant2KAPA", "HGSVCxPool1"),
+#     ("HGSVCxpool2x02", "HGSVCpool2iTRUE5", "HGSVCpool2OPSfromFrozen2ul"),
+# ]
+comparisons = [tuple(e.split(",")) for e in config["comparisons"]]
 # comparisons = [list(itertools.combinations(e,2)) for e in comparisons_raw]
 # comparisons = [sub_e for e in comparisons for sub_e in e]
 print(comparisons)
@@ -241,7 +244,7 @@ rule ngsplot:
         # sample2 =  lambda wc: wc.comparison.split(".vs.")[1],
         ngsplot_dir = lambda wc, output: output.heatmap.replace(".heatmap.pdf", "")
     conda:
-        "ngsplot"
+        "../envs/bioinfotools.yaml"
     resources:
         mem_mb=get_mem_mb_heavy,
         time="10:00:00",
