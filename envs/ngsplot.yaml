@@ -1,0 +1,6 @@
+name: ngsplot
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-ngsplot
