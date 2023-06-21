@@ -1,7 +1,6 @@
-name: no_env
+name: ngsplot
 channels:
   - conda-forge
   - bioconda
 dependencies:
-  - samtools
-  - biobambam
+  - r-ngsplot

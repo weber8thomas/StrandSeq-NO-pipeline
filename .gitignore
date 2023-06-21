@@ -165,3 +165,5 @@ errors/
 *.log
 TEST*
 .snakemake/
+*.bam
+*.cnt

@@ -244,7 +244,8 @@ rule ngsplot:
         # sample2 =  lambda wc: wc.comparison.split(".vs.")[1],
         ngsplot_dir = lambda wc, output: output.heatmap.replace(".heatmap.pdf", "")
     conda:
-        "../envs/bioinfotools.yaml"
+        # "ngsplot"
+        "../envs/ngsplot.yaml"
     resources:
         mem_mb=get_mem_mb_heavy,
         time="10:00:00",
